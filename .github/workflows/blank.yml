@@ -1,0 +1,109 @@
+name: Full CI/CD Pipeline
+
+on: #Trigger: khi nào CI chạy (push/PR vào main)
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'                      # Khi tạo tag release như v1.0.0
+    paths: # Hữu ích khi chỉ muốn chạy workflow khi thay đổi mã nguồn chính
+      - 'src/**'
+      - '!README.md'       # Bỏ qua README
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: "0 3 * * *"           # Chạy lúc 3h sáng mỗi ngày (UTC)
+  workflow_dispatch:              # Cho phép chạy tay từ GitHub UI
+
+jobs: #Tập các công việc chạy
+  build-test-publish:
+    runs-on: ubuntu-latest   #runs-on: Chạy trên runner nào (Ubuntu)
+
+    steps:  #Từng bước hành động (git checkout, setup .NET, build...)
+    - name: 🔁 Checkout code
+      uses: actions/checkout@v3
+
+    - name: 💾 Cache NuGet packages #  Giúp giảm thời gian build khi không thay đổi package
+      uses: actions/cache@v3
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: 🛠️ Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: 🔨 Build
+      run: dotnet build --configuration Release
+
+    - name: 🧪 Test
+      run: dotnet test --configuration Release --no-build --verbosity normal
+      # no-build: Giảm thời gian test (vì đã build trước đó)
+      # configuration Release: Test trên bản release
+      # verbosity normal: Hiển thị thông tin rõ ràng hơn
+    - name: 📦 Publish
+      run: dotnet publish MyApp/MyApp.csproj -c Release -o ./publish
+      # -c Release: Build theo config Release
+      # -o ./publish: output thư mục publish nằm trong workspace GitHub
+    - name: 📤 Upload publish artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: myapp-publish
+        path: ./publish
+
+  docker-deploy:
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 🔁 Checkout code
+      uses: actions/checkout@v3
+
+    - name: 🔐 Docker Login
+      run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+    - name: 🐳 Build Docker image
+      run: docker build -t ${{ secrets.DOCKER_USERNAME }}/myapp:latest .
+
+    - name: 🚀 Push Docker image
+      run: docker push ${{ secrets.DOCKER_USERNAME }}/myapp:latest
+
+  ftp-deploy:
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Download publish artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: myapp-publish
+        path: ./publish
+
+    - name: 🚀 Upload via FTP to IIS
+      uses: SamKirkland/FTP-Deploy-Action@v4
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        local-dir: ./publish
+        server-dir: /site/wwwroot/
+
+  azure-deploy:
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Download publish artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: myapp-publish
+        path: ./publish
+
+    - name: 🚀 Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: my-dotnet-app
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: ./publish
