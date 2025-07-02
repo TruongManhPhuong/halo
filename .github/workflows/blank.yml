@@ -20,7 +20,7 @@ jobs: #Tập các công việc chạy
 
     steps:  #Từng bước hành động (git checkout, setup .NET, build...)
     - name: 🔁 Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v3   # Bước lấy source code từ GitHub
 
     - name: 💾 Cache NuGet packages #  Giúp giảm thời gian build khi không thay đổi package
       uses: actions/cache@v3
@@ -84,11 +84,11 @@ jobs: #Tập các công việc chạy
     - name: 🚀 Upload via FTP to IIS
       uses: SamKirkland/FTP-Deploy-Action@v4
       with:
-        server: ${{ secrets.FTP_SERVER }}
+        server: ${{ secrets.FTP_SERVER }} # Ví dụ: ftp.yourdomain.com
         username: ${{ secrets.FTP_USERNAME }}
         password: ${{ secrets.FTP_PASSWORD }}
         local-dir: ./publish
-        server-dir: /site/wwwroot/
+        server-dir: /site/wwwroot/ # Thư mục trên server (IIS)
 
   azure-deploy:
     needs: build-test-publish
@@ -104,6 +104,6 @@ jobs: #Tập các công việc chạy
     - name: 🚀 Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
       with:
-        app-name: my-dotnet-app
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: ./publish
+        app-name: my-dotnet-app # Tên app trên Azure
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}  # XML từ Azure portal
+        package: ./publish  # Nơi chứa file publish
